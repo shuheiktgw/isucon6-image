@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"strconv"
@@ -73,6 +74,18 @@ func starsPostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// pprof
+	pm := http.NewServeMux()
+	pm.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	ps := &http.Server{
+		Addr:    "127.0.0.1:6061",
+		Handler: pm,
+	}
+
+	go func() {
+		ps.ListenAndServe()
+	}()
+
 	host := os.Getenv("ISUTAR_DB_HOST")
 	if host == "" {
 		host = "localhost"

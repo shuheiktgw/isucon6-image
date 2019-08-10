@@ -12,6 +12,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"regexp"
@@ -390,6 +391,17 @@ func getSession(w http.ResponseWriter, r *http.Request) *sessions.Session {
 }
 
 func main() {
+	// pprof
+	pm := http.NewServeMux()
+	pm.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	ps := &http.Server{
+		Addr:    "127.0.0.1:6060",
+		Handler: pm,
+	}
+	go func() {
+		ps.ListenAndServe()
+	}()
+
 	host := os.Getenv("ISUDA_DB_HOST")
 	if host == "" {
 		host = "localhost"
