@@ -326,12 +326,21 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 		keywords = append(keywords, entry.Keyword)
 	}
 
+	args := make([]string, 0, 500)
+	kw2sha := make(map[string]string)
 	for _, keyword := range keywords {
-		u, err := r.URL.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(keyword))
-		panicIf(err)
-		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(keyword))
+		kw2sha[keyword] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(keyword)))
+		args = append(args, keyword, kw2sha[keyword])
+	}
 
-		content = strings.Replace(content, keyword, link, -1)
+	replacer := strings.NewReplacer(args...)
+	content = html.EscapeString(replacer.Replace(content))
+
+	for kw, hash := range kw2sha {
+		u, err := r.URL.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(kw))
+		panicIf(err)
+		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
+		content = strings.Replace(content, hash, link, -1)
 	}
 
 	return strings.Replace(content, "\n", "<br />\n", -1)
