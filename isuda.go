@@ -40,6 +40,7 @@ var (
 	store   *sessions.CookieStore
 
 	keywordEntries []*Entry
+	newKeywords []string
 
 	errInvalidUser = errors.New("Invalid User")
 )
@@ -89,6 +90,8 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 
+	newKeywords = make([]string, 0, 500)
+
 	resp, err := http.Get(fmt.Sprintf("%s/initialize", isutarEndpoint))
 	panicIf(err)
 	defer resp.Body.Close()
@@ -121,7 +124,7 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 		e := Entry{}
 		err := rows.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
 		panicIf(err)
-		e.Html = htmlify(w, r, e.Description)
+		e.Html = htmlify(w, r, e.Keyword, e.Description)
 		e.Stars = loadStars(e.Keyword)
 		entries = append(entries, &e)
 	}
@@ -192,6 +195,10 @@ func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 			needSort = false
 			break
 		}
+	}
+
+	if needSort {
+		newKeywords = append(newKeywords, keyword)
 	}
 
 	if needSort {
@@ -296,7 +303,7 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	e.Html = htmlify(w, r, e.Description)
+	e.Html = htmlify(w, r, e.Keyword, e.Description)
 	e.Stars = loadStars(e.Keyword)
 
 	re.HTML(w, http.StatusOK, "keyword", struct {
@@ -347,11 +354,29 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
+func htmlify(w http.ResponseWriter, r *http.Request, originalKey string, content string) string {
 	if content == "" {
 		return ""
 	}
 
+	for _, key := range newKeywords {
+		if strings.Contains(content, key) {
+			return compaileContent(content)
+		}
+	}
+
+	row := db.QueryRow(`SELECT * FROM cached_content WHERE keyword = ?`, originalKey)
+	cc := CachedContent{}
+	err := row.Scan(&cc.Keyword, &cc.Content)
+	if err == sql.ErrNoRows {
+		return compaileContent(content)
+	}
+	panicIf(err)
+
+	return cc.Content
+}
+
+func compaileContent(content string) string {
 	keywords := make([][]string, 0, 500)
 	for _, entry := range keywordEntries {
 		keywords = append(keywords, []string{entry.Keyword, entry.Link.String})

@@ -19,6 +19,11 @@ type Entry struct {
 	Stars []*Star
 }
 
+type CachedContent struct {
+	Keyword string
+	Content string
+}
+
 type User struct {
 	ID        int
 	Name      string
