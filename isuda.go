@@ -153,10 +153,6 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func robotsHandler(w http.ResponseWriter, r *http.Request) {
-	notFound(w)
-}
-
 func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 	if err := setName(w, r); err != nil {
 		forbidden(w)
@@ -514,7 +510,6 @@ func main() {
 	r.UseEncodedPath()
 	r.HandleFunc("/", myHandler(topHandler))
 	r.HandleFunc("/initialize", myHandler(initializeHandler)).Methods("GET")
-	r.HandleFunc("/robots.txt", myHandler(robotsHandler))
 	r.HandleFunc("/keyword", myHandler(keywordPostHandler)).Methods("POST")
 
 	l := r.PathPrefix("/login").Subrouter()
@@ -530,6 +525,5 @@ func main() {
 	k.Methods("GET").HandlerFunc(myHandler(keywordByKeywordHandler))
 	k.Methods("POST").HandlerFunc(myHandler(keywordByKeywordDeleteHandler))
 
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./public/")))
 	log.Fatal(http.ListenAndServe(":5000", r))
 }
