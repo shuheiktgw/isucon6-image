@@ -94,7 +94,7 @@ func topHandler(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(p)
 
 	rows, err := db.Query(fmt.Sprintf(
-		"SELECT * FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
+		"SELECT id, author_id, keyword, description, updated_at, created_at FROM entry ORDER BY updated_at DESC LIMIT %d OFFSET %d",
 		perPage, perPage*(page-1),
 	))
 	if err != nil && err != sql.ErrNoRows {
@@ -163,12 +163,15 @@ func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "SPAM!", http.StatusBadRequest)
 		return
 	}
+
+	link := generateLink(keyword)
+
 	_, err := db.Exec(`
-		INSERT INTO entry (author_id, keyword, description, created_at, updated_at)
-		VALUES (?, ?, ?, NOW(), NOW())
+		INSERT INTO entry (author_id, keyword, description, link, created_at, updated_at)
+		VALUES (?, ?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
-		author_id = ?, keyword = ?, description = ?, updated_at = NOW()
-	`, userID, keyword, description, userID, keyword, description)
+		author_id = ?, keyword = ?, description = ?, link =?, updated_at = NOW()
+	`, userID, keyword, description, link, userID, keyword, description, link)
 	panicIf(err)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
@@ -257,7 +260,7 @@ func keywordByKeywordHandler(w http.ResponseWriter, r *http.Request) {
 	keyword, _ := url.QueryUnescape(mux.Vars(r)["keyword"])
 	row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
 	e := Entry{}
-	err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt, &e.Link)
 	if err == sql.ErrNoRows {
 		notFound(w)
 		return
@@ -294,7 +297,7 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	row := db.QueryRow(`SELECT * FROM entry WHERE keyword = ?`, keyword)
 	e := Entry{}
-	err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.AuthorID, &e.Keyword, &e.Description, &e.UpdatedAt, &e.CreatedAt, &e.Link)
 	if err == sql.ErrNoRows {
 		notFound(w)
 		return
@@ -309,42 +312,46 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 		return ""
 	}
 	rows, err := db.Query(`
-		SELECT keyword FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+		SELECT keyword, link FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
 	`)
 	panicIf(err)
 
 	entries := make([]*Entry, 0, 500)
 	for rows.Next() {
 		e := Entry{}
-		err := rows.Scan(&e.Keyword)
+		err := rows.Scan(&e.Keyword, &e.Link)
 		panicIf(err)
 		entries = append(entries, &e)
 	}
 	rows.Close()
 
-	keywords := make([]string, 0, 500)
+	keywords := make([][]string, 0, 500)
 	for _, entry := range entries {
-		keywords = append(keywords, entry.Keyword)
+		keywords = append(keywords, []string{entry.Keyword, entry.Link.String})
 	}
 
 	args := make([]string, 0, 500)
-	kw2sha := make(map[string]string)
+	sha2link := make(map[string]string)
 	for _, keyword := range keywords {
-		kw2sha[keyword] = "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(keyword)))
-		args = append(args, keyword, kw2sha[keyword])
+		hash := "isuda_" + fmt.Sprintf("%x", sha1.Sum([]byte(keyword[0])))
+		sha2link[hash] = keyword[1]
+		args = append(args, keyword[0], hash)
 	}
 
 	replacer := strings.NewReplacer(args...)
 	content = html.EscapeString(replacer.Replace(content))
 
-	for kw, hash := range kw2sha {
-		u, err := r.URL.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(kw))
-		panicIf(err)
-		link := fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(kw))
-		content = strings.Replace(content, hash, link, -1)
+	for sha, link := range sha2link {
+		content = strings.Replace(content, sha, link, -1)
 	}
 
 	return strings.Replace(content, "\n", "<br />\n", -1)
+}
+
+func generateLink(keyword string) string {
+	u, err := url.Parse(baseUrl.String()+"/keyword/" + pathURIEscape(keyword))
+	panicIf(err)
+	return fmt.Sprintf("<a href=\"%s\">%s</a>", u, html.EscapeString(keyword))
 }
 
 func loadStars(keyword string) []*Star {

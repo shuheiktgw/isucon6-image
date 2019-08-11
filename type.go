@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -10,6 +11,7 @@ type Entry struct {
 	AuthorID    int
 	Keyword     string
 	Description string
+	Link        sql.NullString
 	UpdatedAt   time.Time
 	CreatedAt   time.Time
 
