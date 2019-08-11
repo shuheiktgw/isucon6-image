@@ -39,6 +39,8 @@ var (
 	re      *render.Render
 	store   *sessions.CookieStore
 
+	keywordEntries []*Entry
+
 	errInvalidUser = errors.New("Invalid User")
 )
 
@@ -72,6 +74,20 @@ func authenticate(w http.ResponseWriter, r *http.Request) error {
 func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec(`DELETE FROM entry WHERE id > 7101`)
 	panicIf(err)
+
+	rows, err := db.Query(`
+		SELECT keyword, link FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+	`)
+	panicIf(err)
+
+	keywordEntries = make([]*Entry, 0, 500)
+	for rows.Next() {
+		e := Entry{}
+		err := rows.Scan(&e.Keyword, &e.Link)
+		panicIf(err)
+		keywordEntries = append(keywordEntries, &e)
+	}
+	rows.Close()
 
 	resp, err := http.Get(fmt.Sprintf("%s/initialize", isutarEndpoint))
 	panicIf(err)
@@ -173,6 +189,25 @@ func keywordPostHandler(w http.ResponseWriter, r *http.Request) {
 		author_id = ?, keyword = ?, description = ?, link =?, updated_at = NOW()
 	`, userID, keyword, description, link, userID, keyword, description, link)
 	panicIf(err)
+
+	needSort := true
+	for _, e := range keywordEntries {
+		if e.Keyword == keyword {
+			needSort = false
+			break
+		}
+	}
+
+	if needSort {
+		for i, e := range keywordEntries {
+			if len(e.Keyword) < len(keyword) {
+				tmp := append(keywordEntries[:i], &Entry{Keyword: keyword, Link: sql.NullString{String: link, Valid: true}})
+				keywordEntries = append(tmp, keywordEntries[i:]...)
+				break
+			}
+		}
+	}
+
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -304,6 +339,15 @@ func keywordByKeywordDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = db.Exec(`DELETE FROM entry WHERE keyword = ?`, keyword)
 	panicIf(err)
+
+	for i, e := range keywordEntries {
+		if e.Keyword == keyword {
+			tmp := keywordEntries[:i]
+			keywordEntries = append(tmp, keywordEntries[i+1:]...)
+			break
+		}
+	}
+
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -311,22 +355,9 @@ func htmlify(w http.ResponseWriter, r *http.Request, content string) string {
 	if content == "" {
 		return ""
 	}
-	rows, err := db.Query(`
-		SELECT keyword, link FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
-	`)
-	panicIf(err)
-
-	entries := make([]*Entry, 0, 500)
-	for rows.Next() {
-		e := Entry{}
-		err := rows.Scan(&e.Keyword, &e.Link)
-		panicIf(err)
-		entries = append(entries, &e)
-	}
-	rows.Close()
 
 	keywords := make([][]string, 0, 500)
-	for _, entry := range entries {
+	for _, entry := range keywordEntries {
 		keywords = append(keywords, []string{entry.Keyword, entry.Link.String})
 	}
 
